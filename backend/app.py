@@ -19,9 +19,9 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # Configuration
-KNOWN_FACES_DIR = '/Users/kartikey0104/Documents/opencv_learn/face-attendance-web/projects/known_faces'
-ATTENDANCE_FILE = '/Users/kartikey0104/Documents/opencv_learn/face-attendance-web/attendance.xlsx'
-VOICE_DIR = '/Users/kartikey0104/Documents/opencv_learn/face-attendance-web/voice'
+KNOWN_FACES_DIR = os.path.join(os.getcwd(), 'projects', 'known_faces')
+ATTENDANCE_FILE = os.path.join(os.getcwd(), 'attendance.xlsx')
+VOICE_DIR = os.path.join(os.getcwd(), 'voice')
 
 # Initialize face recognizer and detector
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
