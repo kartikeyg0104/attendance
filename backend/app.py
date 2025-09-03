@@ -15,17 +15,28 @@ import io
 from PIL import Image
 import json
 
+print("Starting Face Attendance Backend Server...")
+print("Loading dependencies...done")
+
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
+print("Flask app initialized")
+
 # Configuration
-KNOWN_FACES_DIR = os.path.join(os.getcwd(), 'projects', 'known_faces')
-ATTENDANCE_FILE = os.path.join(os.getcwd(), 'attendance.xlsx')
-VOICE_DIR = os.path.join(os.getcwd(), 'voice')
+KNOWN_FACES_DIR = os.path.join(os.path.dirname(__file__), '..', 'projects', 'known_faces')
+ATTENDANCE_FILE = os.path.join(os.path.dirname(__file__), '..', 'attendance.xlsx')
+VOICE_DIR = os.path.join(os.path.dirname(__file__), '..', 'voice')
+
+print("Configuration loaded")
 
 # Initialize face recognizer and detector
+print("Loading face cascade...")
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+print("Loading face recognizer...")
 recognizer = cv2.face.LBPHFaceRecognizer_create()
+
+print("Face recognition modules loaded")
 
 # Global variables for face recognition
 known_faces = []
@@ -202,6 +213,10 @@ def add_person():
         name = data.get('name', '').strip()
         image_data = data.get('image')
         
+        print(f"Add person request received - Name: {name}")
+        print(f"Known faces directory: {KNOWN_FACES_DIR}")
+        print(f"Directory exists: {os.path.exists(KNOWN_FACES_DIR)}")
+        
         if not name or not image_data:
             return jsonify({"success": False, "message": "Name and image are required"}), 400
         
@@ -210,10 +225,20 @@ def add_person():
         if image is None:
             return jsonify({"success": False, "message": "Invalid image data"}), 400
         
+        print(f"Image converted successfully, size: {image.shape}")
+        
         # Detect faces in the image
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        # Use same detection parameters as recognition
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+        # Use same detection parameters as training and recognition
+        faces = face_cascade.detectMultiScale(
+            gray, 
+            scaleFactor=1.1, 
+            minNeighbors=5, 
+            minSize=(30, 30),
+            maxSize=(300, 300)
+        )
+        
+        print(f"Faces detected: {len(faces)}")
         
         if len(faces) == 0:
             return jsonify({"success": False, "message": "No face detected in the image"}), 400
@@ -221,18 +246,38 @@ def add_person():
         # Save the image
         filename = f"{name}.jpg"
         filepath = os.path.join(KNOWN_FACES_DIR, filename)
-        cv2.imwrite(filepath, image)
+        
+        print(f"Saving image to: {filepath}")
+        
+        # Ensure directory exists
+        os.makedirs(KNOWN_FACES_DIR, exist_ok=True)
+        
+        success = cv2.imwrite(filepath, image)
+        print(f"Image save successful: {success}")
+        
+        if not success:
+            return jsonify({"success": False, "message": "Failed to save image"}), 500
+        
+        # Verify file was saved
+        if os.path.exists(filepath):
+            print(f"File confirmed saved: {filepath}")
+        else:
+            print(f"File NOT found after save: {filepath}")
+            return jsonify({"success": False, "message": "Image file not created"}), 500
         
         # Reload faces to include the new person
-        load_known_faces()
+        load_success = load_known_faces()
+        print(f"Model retraining successful: {load_success}")
         
         return jsonify({
             "success": True,
             "message": f"Person '{name}' added successfully",
-            "filename": filename
+            "filename": filename,
+            "filepath": filepath
         })
         
     except Exception as e:
+        print(f"Error in add_person: {str(e)}")
         return jsonify({"success": False, "message": f"Error adding person: {str(e)}"}), 500
 
 @app.route('/model-status', methods=['GET'])
