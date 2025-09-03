@@ -21,7 +21,6 @@ import {
   CameraAlt, 
   PersonAdd, 
   List, 
-  People,
   Assessment,
   Settings as SettingsIcon,
   Notifications,
@@ -30,7 +29,6 @@ import {
 import AttendanceCapture from './components/AttendanceCapture';
 import AddPerson from './components/AddPerson';
 import AttendanceView from './components/AttendanceView';
-import KnownFaces from './components/KnownFaces';
 import Reports from './components/Reports';
 import Settings from './components/Settings';
 
@@ -133,12 +131,11 @@ function App() {
   };
 
   const tabLabels = [
-    { icon: <CameraAlt />, label: 'Mark Attendance', shortLabel: 'Attendance' },
-    { icon: <PersonAdd />, label: 'Add Person', shortLabel: 'Add' },
-    { icon: <List />, label: 'View Records', shortLabel: 'Records' },
-    { icon: <People />, label: 'Manage People', shortLabel: 'People' },
-    { icon: <Assessment />, label: 'Reports', shortLabel: 'Reports' },
-    { icon: <SettingsIcon />, label: 'Settings', shortLabel: 'Settings' }
+  { icon: <CameraAlt />, label: 'Mark Attendance', shortLabel: 'Attendance' },
+  { icon: <PersonAdd />, label: 'Add Person', shortLabel: 'Add' },
+  { icon: <List />, label: 'View Records', shortLabel: 'Records' },
+  { icon: <Assessment />, label: 'Reports', shortLabel: 'Reports' },
+  { icon: <SettingsIcon />, label: 'Settings', shortLabel: 'Settings' }
   ];
 
   return (
@@ -270,12 +267,9 @@ function App() {
               <AttendanceView />
             </TabPanel>
             <TabPanel value={tabValue} index={3}>
-              <KnownFaces />
-            </TabPanel>
-            <TabPanel value={tabValue} index={4}>
               <Reports />
             </TabPanel>
-            <TabPanel value={tabValue} index={5}>
+            <TabPanel value={tabValue} index={4}>
               <Settings />
             </TabPanel>
           </Paper>
