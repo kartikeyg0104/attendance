@@ -14,8 +14,7 @@ import {
 } from '@mui/material';
 import { People, Delete, Refresh } from '@mui/icons-material';
 import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:5001';
+import { API_BASE_URL, IMAGES_BASE_URL } from '../config';
 
 interface KnownPerson {
   name: string;

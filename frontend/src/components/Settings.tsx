@@ -25,6 +25,7 @@ import {
   Timer,
   Refresh
 } from '@mui/icons-material';
+import { AUDIO_BASE_URL } from '../config';
 
 interface SystemSettings {
   autoRecognition: boolean;
@@ -106,7 +107,7 @@ function Settings() {
   const testAudioFunction = () => {
     setTestAudio(true);
     try {
-      const audio = new Audio('http://localhost:5001/audio/attendance_marked.wav');
+      const audio = new Audio(`${AUDIO_BASE_URL}/attendance_marked.wav`);
       audio.volume = settings.soundVolume / 100;
       audio.play().catch(console.error);
     } catch (error) {

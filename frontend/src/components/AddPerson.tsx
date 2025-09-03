@@ -12,8 +12,7 @@ import {
 } from '@mui/material';
 import { PersonAdd, CheckCircle } from '@mui/icons-material';
 import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:5001';
+import { API_BASE_URL } from '../config';
 
 function AddPerson() {
   const webcamRef = useRef<Webcam>(null);

@@ -21,8 +21,7 @@ import {
   AutoMode 
 } from '@mui/icons-material';
 import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:5001';
+import { API_BASE_URL, AUDIO_BASE_URL } from '../config';
 
 interface AttendanceResponse {
   name: string;
