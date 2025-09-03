@@ -43,12 +43,12 @@ def load_known_faces():
     known_faces = []
     known_names = []
     face_labels = []
-    label_counter = 0
     
     if not os.path.exists(KNOWN_FACES_DIR):
         os.makedirs(KNOWN_FACES_DIR, exist_ok=True)
         return False
     
+    label_counter = 0
     for filename in os.listdir(KNOWN_FACES_DIR):
         if filename.endswith('.jpg') or filename.endswith('.png'):
             image_path = os.path.join(KNOWN_FACES_DIR, filename)
@@ -57,34 +57,51 @@ def load_known_faces():
             if image is not None:
                 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
                 # Improved face detection parameters
-                faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+                faces = face_cascade.detectMultiScale(
+                    gray, 
+                    scaleFactor=1.1, 
+                    minNeighbors=5, 
+                    minSize=(30, 30),
+                    maxSize=(300, 300)
+                )
                 
                 if len(faces) > 0:
                     # Take the largest face (most likely the main subject)
                     largest_face = max(faces, key=lambda face: face[2] * face[3])
                     x, y, w, h = largest_face
                     
+                    # Add some padding around the face
+                    padding = 10
+                    x = max(0, x - padding)
+                    y = max(0, y - padding)
+                    w = min(gray.shape[1] - x, w + 2 * padding)
+                    h = min(gray.shape[0] - y, h + 2 * padding)
+                    
                     face_region = gray[y:y+h, x:x+w]
                     # Standardize face size for better recognition
-                    face_region = cv2.resize(face_region, (100, 100))
+                    face_region = cv2.resize(face_region, (150, 150))
                     
                     # Apply histogram equalization for better lighting normalization
                     face_region = cv2.equalizeHist(face_region)
+                    # Apply Gaussian blur to reduce noise
+                    face_region = cv2.GaussianBlur(face_region, (3, 3), 0)
                     
                     known_faces.append(face_region)
                     name = filename.split('.')[0]
                     known_names.append(name)
                     face_labels.append(label_counter)
                     
-                    print(f"Loaded face for: {name}")
+                    print(f"Loaded face for: {name} (Label: {label_counter})")
                     label_counter += 1
                 else:
                     print(f"No face detected in {filename}")
     
     if len(known_faces) > 0:
+        print(f"Training recognizer with {len(known_faces)} faces...")
         recognizer.train(known_faces, np.array(face_labels))
         is_trained = True
-        print(f"Training completed with {len(known_faces)} faces: {list(set(known_names))}")
+        print(f"Training completed. Names: {known_names}")
+        print(f"Labels: {face_labels}")
         return True
     
     print("No faces found for training")
@@ -233,17 +250,37 @@ def get_model_status():
     except Exception as e:
         return jsonify({"error": f"Error getting model status: {str(e)}"}), 500
 
-@app.route('/retrain-model', methods=['POST'])
+@app.route('/api/debug-model', methods=['GET'])
+def debug_model():
+    """Debug endpoint to check model status"""
+    try:
+        return jsonify({
+            "is_trained": is_trained,
+            "num_known_faces": len(known_faces),
+            "known_names": known_names,
+            "face_labels": face_labels,
+            "known_faces_dir": KNOWN_FACES_DIR,
+            "files_in_dir": os.listdir(KNOWN_FACES_DIR) if os.path.exists(KNOWN_FACES_DIR) else []
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/retrain-model', methods=['POST'])
 def retrain_model():
     """Manually retrain the face recognition model"""
     try:
         success = load_known_faces()
-        return jsonify({
-            "success": success,
-            "message": "Model retrained successfully" if success else "Failed to retrain model",
-            "known_faces_count": len(known_faces),
-            "known_names": list(set(known_names))
-        })
+        if success:
+            return jsonify({
+                "success": True,
+                "message": f"Model retrained successfully with {len(known_faces)} faces",
+                "known_names": known_names
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "No faces found for training"
+            }), 400
     except Exception as e:
         return jsonify({"success": False, "message": f"Error retraining model: {str(e)}"}), 500
 
@@ -268,7 +305,13 @@ def mark_attendance():
         # Convert to grayscale and detect faces
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         # Improved face detection parameters
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+        faces = face_cascade.detectMultiScale(
+            gray, 
+            scaleFactor=1.1, 
+            minNeighbors=5, 
+            minSize=(30, 30),
+            maxSize=(300, 300)
+        )
         
         if len(faces) == 0:
             return jsonify({
@@ -281,28 +324,37 @@ def mark_attendance():
         largest_face = max(faces, key=lambda face: face[2] * face[3])
         x, y, w, h = largest_face
         
+        # Add some padding around the face
+        padding = 10
+        x = max(0, x - padding)
+        y = max(0, y - padding)
+        w = min(gray.shape[1] - x, w + 2 * padding)
+        h = min(gray.shape[0] - y, h + 2 * padding)
+        
         face_region = gray[y:y+h, x:x+w]
-        face_region = cv2.resize(face_region, (100, 100))
+        face_region = cv2.resize(face_region, (150, 150))
         # Apply histogram equalization for consistency with training
         face_region = cv2.equalizeHist(face_region)
+        # Apply Gaussian blur to reduce noise
+        face_region = cv2.GaussianBlur(face_region, (3, 3), 0)
         
         # Predict
         label, confidence = recognizer.predict(face_region)
         
         print(f"Recognition result - Label: {label}, Confidence: {confidence}")
+        print(f"Available labels: {face_labels}")
+        print(f"Available names: {known_names}")
         
         # Find the name corresponding to the label
         recognized_name = None
-        if label < len(known_names):
-            # Find the name for this label
-            for i, face_label in enumerate(face_labels):
-                if face_label == label:
-                    recognized_name = known_names[i]
-                    break
+        if label in face_labels:
+            # Find the index of this label in face_labels
+            label_index = face_labels.index(label)
+            recognized_name = known_names[label_index]
         
-        # Use a stricter confidence threshold for better accuracy
+        # Use a more lenient confidence threshold for better recognition
         # LBPH confidence: lower values mean better match
-        CONFIDENCE_THRESHOLD = 80  # Adjust this value based on testing
+        CONFIDENCE_THRESHOLD = 100  # Increased threshold for better recognition
         
         if recognized_name and confidence < CONFIDENCE_THRESHOLD:
             print(f"Person recognized: {recognized_name} with confidence: {confidence}")
