@@ -14,6 +14,7 @@ import base64
 import io
 from PIL import Image
 import json
+from imagekitio import ImageKit
 
 print("Starting Face Attendance Backend Server...")
 print("Loading dependencies...done")
@@ -22,6 +23,15 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 print("Flask app initialized")
+
+# ImageKit Configuration
+imagekit = ImageKit(
+    private_key='private_JlSgHOOHPHdgNIyJjTEcktnhwXs=',
+    public_key='public_G/NZwLEK8yfwoQkIaa64QSXEqME=',
+    url_endpoint='https://ik.imagekit.io/kartikey/attendance/'
+)
+
+print("ImageKit initialized")
 
 # Configuration
 KNOWN_FACES_DIR = os.path.join(os.path.dirname(__file__), '..', 'projects', 'known_faces')
@@ -134,6 +144,62 @@ def base64_to_cv2(base64_str):
         print(f"Error converting base64 to CV2: {e}")
         return None
 
+def upload_image_to_imagekit(image, filename):
+    """Upload image to ImageKit and return the CDN URL"""
+    try:
+        # Convert OpenCV image to bytes
+        _, buffer = cv2.imencode('.jpg', image)
+        image_bytes = buffer.tobytes()
+        
+        print(f"Uploading {filename} to ImageKit...")
+        
+        # Try upload without options first
+        try:
+            upload_result = imagekit.upload(
+                file=image_bytes,
+                file_name=filename
+            )
+        except Exception as e1:
+            print(f"Simple upload failed: {e1}")
+            # Try with options as kwargs instead of dict
+            try:
+                upload_result = imagekit.upload(
+                    file=image_bytes,
+                    file_name=filename,
+                    is_private_file=False,
+                    folder="known_faces"
+                )
+            except Exception as e2:
+                print(f"Upload with kwargs failed: {e2}")
+                return "local_storage_fallback"
+        
+        print(f"Upload result type: {type(upload_result)}")
+        print(f"Upload result: {upload_result}")
+        
+        # Extract URL from the response
+        if hasattr(upload_result, 'url'):
+            url = upload_result.url
+            print(f"Upload successful: {url}")
+            return url
+        elif hasattr(upload_result, 'response_metadata'):
+            response_data = upload_result.response_metadata
+            if hasattr(response_data, 'url'):
+                url = response_data.url
+                print(f"Upload successful: {url}")
+                return url
+        
+        print(f"Could not extract URL from upload result: {upload_result}")
+        return "local_storage_fallback"
+        
+    except Exception as e:
+        print(f"Error uploading to ImageKit: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # For now, let's skip ImageKit upload and just save locally
+        print("Falling back to local storage only...")
+        return "local_storage_fallback"
+
 def save_attendance(name, confidence):
     """Save attendance record to Excel file"""
     try:
@@ -243,27 +309,28 @@ def add_person():
         if len(faces) == 0:
             return jsonify({"success": False, "message": "No face detected in the image"}), 400
         
-        # Save the image
+        # Upload image to ImageKit instead of saving locally
         filename = f"{name}.jpg"
-        filepath = os.path.join(KNOWN_FACES_DIR, filename)
+        imagekit_url = upload_image_to_imagekit(image, filename)
         
-        print(f"Saving image to: {filepath}")
+        if not imagekit_url or imagekit_url == "local_storage_fallback":
+            print("ImageKit upload failed or not available, continuing with local storage...")
+            imagekit_url = "Local storage only"
+        else:
+            print(f"Image uploaded to ImageKit: {imagekit_url}")
+        
+        # Also save locally for face recognition training (always required)
+        filepath = os.path.join(KNOWN_FACES_DIR, filename)
+        print(f"Saving local copy for training: {filepath}")
         
         # Ensure directory exists
         os.makedirs(KNOWN_FACES_DIR, exist_ok=True)
         
         success = cv2.imwrite(filepath, image)
-        print(f"Image save successful: {success}")
+        print(f"Local save successful: {success}")
         
         if not success:
-            return jsonify({"success": False, "message": "Failed to save image"}), 500
-        
-        # Verify file was saved
-        if os.path.exists(filepath):
-            print(f"File confirmed saved: {filepath}")
-        else:
-            print(f"File NOT found after save: {filepath}")
-            return jsonify({"success": False, "message": "Image file not created"}), 500
+            return jsonify({"success": False, "message": "Failed to save local training copy"}), 500
         
         # Reload faces to include the new person
         load_success = load_known_faces()
@@ -273,7 +340,8 @@ def add_person():
             "success": True,
             "message": f"Person '{name}' added successfully",
             "filename": filename,
-            "filepath": filepath
+            "imagekit_url": imagekit_url,
+            "local_filepath": filepath
         })
         
     except Exception as e:
