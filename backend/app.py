@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
+import pytz
 import os
 import base64
 import io
@@ -56,6 +57,11 @@ is_trained = False
 
 # Store last attendance time for cooldown
 last_attendance = {}
+
+def get_indian_time():
+    """Get current time in Indian Standard Time (IST)"""
+    ist = pytz.timezone('Asia/Kolkata')
+    return datetime.now(ist)
 
 def load_known_faces():
     """Load and train the face recognizer with known faces"""
@@ -203,7 +209,7 @@ def upload_image_to_imagekit(image, filename):
 def save_attendance(name, confidence):
     """Save attendance record to Excel file"""
     try:
-        now = datetime.now()
+        now = get_indian_time()
         date_str = now.strftime("%Y-%m-%d")
         time_str = now.strftime("%H:%M:%S")
         
@@ -473,7 +479,7 @@ def mark_attendance():
             print(f"Person recognized: {recognized_name} with confidence: {confidence}")
             
             # Check cooldown period (1 minute)
-            current_time = datetime.now()
+            current_time = get_indian_time()
             last_time = last_attendance.get(recognized_name)
             
             if last_time and (current_time - last_time).total_seconds() < 60:
@@ -563,7 +569,7 @@ def download_attendance():
         return send_file(
             ATTENDANCE_FILE,
             as_attachment=True,
-            download_name=f"attendance_records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            download_name=f"attendance_records_{get_indian_time().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
         
@@ -641,7 +647,7 @@ def get_statistics():
             })
         
         df = pd.read_excel(ATTENDANCE_FILE)
-        today = datetime.now().date()
+        today = get_indian_time().date()
         week_start = today - timedelta(days=today.weekday())
         month_start = today.replace(day=1)
         
@@ -688,7 +694,7 @@ def backup_data():
         backup_dir = os.path.join(os.path.dirname(ATTENDANCE_FILE), 'backups')
         os.makedirs(backup_dir, exist_ok=True)
         
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = get_indian_time().strftime('%Y%m%d_%H%M%S')
         backup_file = os.path.join(backup_dir, f'attendance_backup_{timestamp}.xlsx')
         
         if os.path.exists(ATTENDANCE_FILE):
@@ -716,4 +722,4 @@ if __name__ == '__main__':
     load_known_faces()
     
     # Run the Flask app
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=False)
