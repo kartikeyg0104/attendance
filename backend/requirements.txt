@@ -7,3 +7,4 @@ pillow==11.3.0
 numpy==2.2.6
 imagekitio==3.2.0
 pytz==2023.3
+python-dotenv==1.0.0

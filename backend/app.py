@@ -17,6 +17,15 @@ from PIL import Image
 import json
 from imagekitio import ImageKit
 
+# Load environment variables from .env file if available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("Environment variables loaded from .env file")
+except ImportError:
+    print("python-dotenv not installed. Using system environment variables only.")
+    print("Run 'pip install python-dotenv' to use .env file configuration.")
+
 print("Starting Face Attendance Backend Server...")
 print("Loading dependencies...done")
 
@@ -25,12 +34,25 @@ CORS(app)  # Enable CORS for all routes
 
 print("Flask app initialized")
 
-# ImageKit Configuration
-imagekit = ImageKit(
-    private_key='private_JlSgHOOHPHdgNIyJjTEcktnhwXs=',
-    public_key='public_G/NZwLEK8yfwoQkIaa64QSXEqME=',
-    url_endpoint='https://ik.imagekit.io/kartikey/attendance/'
-)
+# ImageKit Configuration - Use environment variables for security
+imagekit = None
+try:
+    imagekit_private_key = os.getenv('IMAGEKIT_PRIVATE_KEY')
+    imagekit_public_key = os.getenv('IMAGEKIT_PUBLIC_KEY')
+    imagekit_url_endpoint = os.getenv('IMAGEKIT_URL_ENDPOINT')
+    
+    if imagekit_private_key and imagekit_public_key and imagekit_url_endpoint:
+        imagekit = ImageKit(
+            private_key=imagekit_private_key,
+            public_key=imagekit_public_key,
+            url_endpoint=imagekit_url_endpoint
+        )
+        print("ImageKit initialized successfully")
+    else:
+        print("ImageKit credentials not found in environment variables. Image upload will use local storage only.")
+except Exception as e:
+    print(f"ImageKit initialization failed: {e}. Continuing with local storage only.")
+    imagekit = None
 
 print("ImageKit initialized")
 
@@ -39,24 +61,95 @@ KNOWN_FACES_DIR = os.path.join(os.path.dirname(__file__), '..', 'projects', 'kno
 ATTENDANCE_FILE = os.path.join(os.path.dirname(__file__), '..', 'attendance.xlsx')
 VOICE_DIR = os.path.join(os.path.dirname(__file__), '..', 'voice')
 
+# Get port from environment variable or use default
+PORT = int(os.getenv('PORT', 5000))
+
 print("Configuration loaded")
 
-# Initialize face recognizer and detector
+# Initialize face detector
 print("Loading face cascade...")
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-print("Loading face recognizer...")
-recognizer = cv2.face.LBPHFaceRecognizer_create()
+print("Face cascade loaded successfully")
 
+# Alternative face recognition using template matching and feature extraction
+# This approach works with standard OpenCV without the opencv-contrib extras
+print("Initializing face recognition system...")
 print("Face recognition modules loaded")
 
 # Global variables for face recognition
 known_faces = []
 known_names = []
 face_labels = []
+face_descriptors = []  # Store face feature descriptors
 is_trained = False
 
 # Store last attendance time for cooldown
 last_attendance = {}
+
+def extract_face_features(face_region):
+    """Extract features from a face region using ORB detector"""
+    orb = cv2.ORB_create(nfeatures=500)
+    keypoints, descriptors = orb.detectAndCompute(face_region, None)
+    return keypoints, descriptors
+
+def compute_face_histogram(face_region):
+    """Compute histogram features for face comparison"""
+    # Convert to different color spaces and compute histograms
+    hist_gray = cv2.calcHist([face_region], [0], None, [256], [0, 256])
+    
+    # Normalize histogram
+    hist_gray = cv2.normalize(hist_gray, hist_gray).flatten()
+    
+    return hist_gray
+
+def compare_faces(face1, face2):
+    """Compare two faces using multiple similarity metrics"""
+    # Method 1: Template matching
+    result = cv2.matchTemplate(face1, face2, cv2.TM_CCOEFF_NORMED)
+    template_score = np.max(result)
+    
+    # Method 2: Histogram comparison
+    hist1 = compute_face_histogram(face1)
+    hist2 = compute_face_histogram(face2)
+    hist_score = cv2.compareHist(hist1, hist2, cv2.HISTCMP_CORREL)
+    
+    # Method 3: Simple pixel difference (alternative to SSIM)
+    # Normalize images to same size if needed
+    if face1.shape != face2.shape:
+        face2 = cv2.resize(face2, (face1.shape[1], face1.shape[0]))
+    
+    # Calculate mean squared error
+    mse = np.mean((face1.astype(np.float32) - face2.astype(np.float32)) ** 2)
+    # Convert MSE to similarity score (lower MSE = higher similarity)
+    mse_score = max(0, 1 - (mse / 10000))  # Normalize MSE to 0-1 range
+    
+    # Combine scores (weighted average)
+    combined_score = (template_score * 0.5 + hist_score * 0.3 + mse_score * 0.2)
+    
+    return combined_score
+
+def find_best_match(face_region):
+    """Find the best matching face from known faces"""
+    if len(known_faces) == 0:
+        return None, 0.0
+    
+    best_score = 0.0
+    best_match_idx = -1
+    
+    for i, known_face in enumerate(known_faces):
+        try:
+            score = compare_faces(face_region, known_face)
+            if score > best_score:
+                best_score = score
+                best_match_idx = i
+        except Exception as e:
+            print(f"Error comparing with face {i}: {e}")
+            continue
+    
+    if best_match_idx >= 0 and best_score > 0.6:  # Threshold for recognition
+        return best_match_idx, best_score
+    
+    return None, best_score
 
 def get_indian_time():
     """Get current time in Indian Standard Time (IST)"""
@@ -121,11 +214,45 @@ def load_known_faces():
                     print(f"Loaded face for: {name} (Label: {label_counter})")
                     label_counter += 1
                 else:
-                    print(f"No face detected in {filename}")
+                    print(f"No face detected in {filename}. Trying with different parameters...")
+                    # Try with more relaxed parameters for difficult images
+                    faces_relaxed = face_cascade.detectMultiScale(
+                        gray, 
+                        scaleFactor=1.05, 
+                        minNeighbors=3, 
+                        minSize=(20, 20),
+                        maxSize=(400, 400)
+                    )
+                    
+                    if len(faces_relaxed) > 0:
+                        print(f"Face detected with relaxed parameters for {filename}")
+                        largest_face = max(faces_relaxed, key=lambda face: face[2] * face[3])
+                        x, y, w, h = largest_face
+                        
+                        # Add some padding around the face
+                        padding = 10
+                        x = max(0, x - padding)
+                        y = max(0, y - padding)
+                        w = min(gray.shape[1] - x, w + 2 * padding)
+                        h = min(gray.shape[0] - y, h + 2 * padding)
+                        
+                        face_region = gray[y:y+h, x:x+w]
+                        face_region = cv2.resize(face_region, (150, 150))
+                        face_region = cv2.equalizeHist(face_region)
+                        face_region = cv2.GaussianBlur(face_region, (3, 3), 0)
+                        
+                        known_faces.append(face_region)
+                        name = filename.split('.')[0]
+                        known_names.append(name)
+                        face_labels.append(label_counter)
+                        
+                        print(f"Loaded face for: {name} (Label: {label_counter}) with relaxed detection")
+                        label_counter += 1
+                    else:
+                        print(f"Still no face detected in {filename}. Skipping...")
     
     if len(known_faces) > 0:
-        print(f"Training recognizer with {len(known_faces)} faces...")
-        recognizer.train(known_faces, np.array(face_labels))
+        print(f"Face database loaded with {len(known_faces)} faces...")
         is_trained = True
         print(f"Training completed. Names: {known_names}")
         print(f"Labels: {face_labels}")
@@ -152,6 +279,10 @@ def base64_to_cv2(base64_str):
 
 def upload_image_to_imagekit(image, filename):
     """Upload image to ImageKit and return the CDN URL"""
+    if not imagekit:
+        print("ImageKit not configured, using local storage only")
+        return "local_storage_fallback"
+    
     try:
         # Convert OpenCV image to bytes
         _, buffer = cv2.imencode('.jpg', image)
@@ -457,26 +588,19 @@ def mark_attendance():
         # Apply Gaussian blur to reduce noise
         face_region = cv2.GaussianBlur(face_region, (3, 3), 0)
         
-        # Predict
-        label, confidence = recognizer.predict(face_region)
+        # Find best match using our custom face recognition
+        match_idx, confidence_score = find_best_match(face_region)
         
-        print(f"Recognition result - Label: {label}, Confidence: {confidence}")
-        print(f"Available labels: {face_labels}")
+        print(f"Recognition result - Match Index: {match_idx}, Confidence: {confidence_score}")
+        print(f"Available faces: {len(known_faces)}")
         print(f"Available names: {known_names}")
         
-        # Find the name corresponding to the label
-        recognized_name = None
-        if label in face_labels:
-            # Find the index of this label in face_labels
-            label_index = face_labels.index(label)
-            recognized_name = known_names[label_index]
+        # Recognition threshold
+        CONFIDENCE_THRESHOLD = 0.6  # Similarity score threshold
         
-        # Use a more lenient confidence threshold for better recognition
-        # LBPH confidence: lower values mean better match
-        CONFIDENCE_THRESHOLD = 100  # Increased threshold for better recognition
-        
-        if recognized_name and confidence < CONFIDENCE_THRESHOLD:
-            print(f"Person recognized: {recognized_name} with confidence: {confidence}")
+        if match_idx is not None and confidence_score >= CONFIDENCE_THRESHOLD:
+            recognized_name = known_names[match_idx]
+            print(f"Person recognized: {recognized_name} with confidence: {confidence_score}")
             
             # Check cooldown period (1 minute)
             current_time = get_indian_time()
@@ -493,20 +617,19 @@ def mark_attendance():
                 })
             
             # Save attendance
-            attendance_confidence = max(0, (CONFIDENCE_THRESHOLD - confidence) / CONFIDENCE_THRESHOLD)  # Convert to 0-1 scale
-            if save_attendance(recognized_name, attendance_confidence):
+            if save_attendance(recognized_name, confidence_score):
                 last_attendance[recognized_name] = current_time
                 return jsonify({
                     "success": True,
                     "name": recognized_name,
-                    "confidence": attendance_confidence,
+                    "confidence": confidence_score,
                     "message": f"Attendance marked for {recognized_name}",
                     "audio": "attendance_marked"
                 })
             else:
                 return jsonify({"success": False, "message": "Failed to save attendance"}), 500
         else:
-            print(f"Face not recognized - Confidence: {confidence}, Threshold: {CONFIDENCE_THRESHOLD}")
+            print(f"Face not recognized - Confidence: {confidence_score}, Threshold: {CONFIDENCE_THRESHOLD}")
             return jsonify({
                 "success": False, 
                 "message": "Face not recognized",
@@ -717,9 +840,10 @@ if __name__ == '__main__':
     print("Face Recognition API starting...")
     print(f"Known faces directory: {KNOWN_FACES_DIR}")
     print(f"Attendance file: {ATTENDANCE_FILE}")
+    print(f"Starting server on port {PORT}")
     
     # Load known faces on startup
     load_known_faces()
     
     # Run the Flask app
-    app.run(host='0.0.0.0', port=5001, debug=False)
+    app.run(host='0.0.0.0', port=PORT, debug=False)
