@@ -64,9 +64,17 @@ except Exception as e:
 print("ImageKit initialized")
 
 # Configuration
-KNOWN_FACES_DIR = os.path.join(os.path.dirname(__file__), '..', 'projects', 'known_faces')
-ATTENDANCE_FILE = os.path.join(os.path.dirname(__file__), '..', 'attendance.xlsx')
-VOICE_DIR = os.path.join(os.path.dirname(__file__), '..', 'voice')
+# Check if running in Docker container or locally
+if os.path.exists('/app/known_faces'):
+    # Running in Docker container
+    KNOWN_FACES_DIR = '/app/known_faces'
+    ATTENDANCE_FILE = '/app/attendance.xlsx'
+    VOICE_DIR = '/app/voice'
+else:
+    # Running locally
+    KNOWN_FACES_DIR = os.path.join(os.path.dirname(__file__), '..', 'projects', 'known_faces')
+    ATTENDANCE_FILE = os.path.join(os.path.dirname(__file__), '..', 'attendance.xlsx')
+    VOICE_DIR = os.path.join(os.path.dirname(__file__), '..', 'voice')
 
 # Get port from environment variable or use default
 PORT = int(os.getenv('PORT', 5000))
@@ -383,6 +391,23 @@ def save_attendance(name, confidence):
 def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy", "message": "Face Recognition API is running"})
+
+@app.route('/api/debug', methods=['GET'])
+def debug_info():
+    """Debug endpoint to check face data status"""
+    try:
+        return jsonify({
+            "known_faces_dir": KNOWN_FACES_DIR,
+            "dir_exists": os.path.exists(KNOWN_FACES_DIR),
+            "files_in_dir": os.listdir(KNOWN_FACES_DIR) if os.path.exists(KNOWN_FACES_DIR) else [],
+            "known_faces_count": len(known_faces),
+            "known_names": known_names,
+            "face_labels": face_labels,
+            "attendance_file": ATTENDANCE_FILE,
+            "attendance_file_exists": os.path.exists(ATTENDANCE_FILE)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/audio/<filename>')
 def serve_audio(filename):
@@ -847,11 +872,23 @@ def backup_data():
 if __name__ == '__main__':
     print("Face Recognition API starting...")
     print(f"Known faces directory: {KNOWN_FACES_DIR}")
+    print(f"Directory exists: {os.path.exists(KNOWN_FACES_DIR)}")
     print(f"Attendance file: {ATTENDANCE_FILE}")
     print(f"Starting server on port {PORT}")
     
+    # Debug: List files in known faces directory
+    if os.path.exists(KNOWN_FACES_DIR):
+        files = os.listdir(KNOWN_FACES_DIR)
+        print(f"Files in known_faces directory: {files}")
+    else:
+        print("Known faces directory does not exist!")
+    
     # Load known faces on startup
     load_known_faces()
+    
+    # Print loaded face data
+    print(f"Loaded faces: {len(known_faces)} faces")
+    print(f"Known names: {known_names}")
     
     # Run the Flask app
     app.run(host='0.0.0.0', port=PORT, debug=False)

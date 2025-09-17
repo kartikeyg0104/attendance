@@ -9,7 +9,7 @@ services:
       - FLASK_ENV=production
       - PORT=5002
     volumes:
-      - ./backend/known_faces:/app/known_faces
+      - ./projects/known_faces:/app/known_faces
       - ./backend/backup:/app/backup
       - ./attendance.xlsx:/app/attendance.xlsx
     restart: unless-stopped
