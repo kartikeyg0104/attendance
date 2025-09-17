@@ -32,8 +32,12 @@ print("Loading dependencies...done")
 app = Flask(__name__)
 
 # Configure CORS for production
-allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
+allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000,https://attendance-frontend-mkwg.onrender.com').split(',')
+# Clean up any whitespace
+allowed_origins = [origin.strip() for origin in allowed_origins]
 CORS(app, origins=allowed_origins)  # Enable CORS for specified origins
+
+print(f"CORS configured for origins: {allowed_origins}")
 
 print("Flask app initialized")
 
@@ -375,6 +379,7 @@ def save_attendance(name, confidence):
 
 # Routes
 @app.route('/health', methods=['GET'])
+@app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy", "message": "Face Recognition API is running"})
