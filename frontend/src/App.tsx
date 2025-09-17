@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AppBar,
   Toolbar,
@@ -15,7 +15,15 @@ import {
   IconButton,
   Menu,
   MenuItem,
-  Tooltip
+  Tooltip,
+  Snackbar,
+  Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  LinearProgress
 } from '@mui/material';
 import { 
   CameraAlt, 
@@ -24,13 +32,20 @@ import {
   Assessment,
   Settings as SettingsIcon,
   Notifications,
-  MoreVert
+  MoreVert,
+  Info,
+  Help,
+  Feedback,
+  WifiOff,
+  CheckCircle
 } from '@mui/icons-material';
 import AttendanceCapture from './components/AttendanceCapture';
 import AddPerson from './components/AddPerson';
 import AttendanceView from './components/AttendanceView';
 import Reports from './components/Reports';
 import Settings from './components/Settings';
+import axios from 'axios';
+import { API_BASE_URL } from './config';
 
 const theme = createTheme({
   palette: {
@@ -116,10 +131,65 @@ function TabPanel(props: TabPanelProps) {
 function App() {
   const [tabValue, setTabValue] = useState(0);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [notifications] = useState(3); // Mock notification count
+  const [notifications, setNotifications] = useState(3); // Mock notification count
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
+  const [showConnectionAlert, setShowConnectionAlert] = useState(false);
+  const [showAboutDialog, setShowAboutDialog] = useState(false);
+  const [lastActivity, setLastActivity] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    checkConnection();
+    
+    // Check connection every 30 seconds
+    const interval = setInterval(checkConnection, 30000);
+    
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+    
+    return () => clearInterval(interval);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const checkConnection = async () => {
+    try {
+      setConnectionStatus('checking');
+      const response = await axios.get(`${API_BASE_URL}/health`, { timeout: 5000 });
+      if (response.status === 200) {
+        setConnectionStatus('connected');
+        if (showConnectionAlert) {
+          setShowConnectionAlert(false);
+          showNotification('Connection restored!', 'success');
+        }
+      }
+    } catch (error) {
+      setConnectionStatus('disconnected');
+      if (!showConnectionAlert) {
+        setShowConnectionAlert(true);
+        showNotification('Backend connection lost', 'error');
+      }
+    }
+  };
+
+  const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    // Browser notification
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('Face Attendance System', {
+        body: message,
+        icon: '/favicon.ico'
+      });
+    }
+    
+    setLastActivity(`${new Date().toLocaleTimeString()}: ${message}`);
+  };
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
+    setIsLoading(true);
+    
+    // Simulate loading delay for better UX
+    setTimeout(() => setIsLoading(false), 300);
   };
 
   const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
@@ -128,6 +198,21 @@ function App() {
 
   const handleMenuClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleAbout = () => {
+    setShowAboutDialog(true);
+    handleMenuClose();
+  };
+
+  const handleHelp = () => {
+    window.open('https://github.com/kartikeyg0104/attendance/blob/main/README.md', '_blank');
+    handleMenuClose();
+  };
+
+  const handleFeedback = () => {
+    window.open('mailto:feedback@attendance-system.com?subject=Feedback&body=Please share your feedback...', '_blank');
+    handleMenuClose();
   };
 
   const tabLabels = [
@@ -184,10 +269,30 @@ function App() {
             
             <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.5, sm: 1 } }}>
               <Tooltip title="Notifications">
-                <IconButton color="inherit" size={window.innerWidth < 600 ? 'small' : 'medium'}>
+                <IconButton 
+                  color="inherit" 
+                  size={window.innerWidth < 600 ? 'small' : 'medium'}
+                  onClick={() => setNotifications(0)}
+                >
                   <Badge badgeContent={notifications} color="error">
                     <Notifications />
                   </Badge>
+                </IconButton>
+              </Tooltip>
+              
+              <Tooltip title={`Backend: ${connectionStatus}`}>
+                <IconButton 
+                  color="inherit" 
+                  size={window.innerWidth < 600 ? 'small' : 'medium'}
+                  onClick={checkConnection}
+                >
+                  {connectionStatus === 'connected' ? (
+                    <CheckCircle color="success" />
+                  ) : connectionStatus === 'disconnected' ? (
+                    <WifiOff color="error" />
+                  ) : (
+                    <Notifications />
+                  )}
                 </IconButton>
               </Tooltip>
               
@@ -206,9 +311,18 @@ function App() {
                 open={Boolean(anchorEl)}
                 onClose={handleMenuClose}
               >
-                <MenuItem onClick={handleMenuClose}>About</MenuItem>
-                <MenuItem onClick={handleMenuClose}>Help</MenuItem>
-                <MenuItem onClick={handleMenuClose}>Feedback</MenuItem>
+                <MenuItem onClick={handleAbout}>
+                  <Info sx={{ mr: 1 }} />
+                  About
+                </MenuItem>
+                <MenuItem onClick={handleHelp}>
+                  <Help sx={{ mr: 1 }} />
+                  Help
+                </MenuItem>
+                <MenuItem onClick={handleFeedback}>
+                  <Feedback sx={{ mr: 1 }} />
+                  Feedback
+                </MenuItem>
               </Menu>
             </Box>
           </Toolbar>
@@ -257,6 +371,8 @@ function App() {
               </Tabs>
             </Box>
 
+            {isLoading && <LinearProgress sx={{ width: '100%', position: 'absolute', bottom: 0 }} />}
+
             <TabPanel value={tabValue} index={0}>
               <AttendanceCapture />
             </TabPanel>
@@ -274,6 +390,58 @@ function App() {
             </TabPanel>
           </Paper>
         </Container>
+
+        {/* Connection Alert */}
+        <Snackbar
+          open={showConnectionAlert}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert 
+            severity="warning" 
+            onClose={() => setShowConnectionAlert(false)}
+            action={
+              <Button color="inherit" size="small" onClick={checkConnection}>
+                Retry
+              </Button>
+            }
+          >
+            Backend connection lost. Some features may not work properly.
+          </Alert>
+        </Snackbar>
+
+        {/* About Dialog */}
+        <Dialog
+          open={showAboutDialog}
+          onClose={() => setShowAboutDialog(false)}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle>
+            📱 Smart Attendance System
+          </DialogTitle>
+          <DialogContent>
+            <Typography paragraph>
+              A modern face recognition-based attendance system built with React and Flask.
+            </Typography>
+            <Typography paragraph>
+              <strong>Features:</strong>
+            </Typography>
+            <ul>
+              <li>Real-time face recognition</li>
+              <li>Automated attendance marking</li>
+              <li>Comprehensive reporting</li>
+              <li>User-friendly interface</li>
+              <li>Secure data management</li>
+            </ul>
+            <Typography paragraph>
+              <strong>Version:</strong> 2.0.0<br />
+              <strong>Last Activity:</strong> {lastActivity || 'None'}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setShowAboutDialog(false)}>Close</Button>
+          </DialogActions>
+        </Dialog>
       </Box>
     </ThemeProvider>
   );

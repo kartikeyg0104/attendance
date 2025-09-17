@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+*/node_modules/
 __pycache__/
 *.pyc
 *.pyo
@@ -27,6 +28,7 @@ Thumbs.db
 # Build outputs
 build/
 dist/
+frontend/build/
 *.egg-info/
 
 # Logs
@@ -34,6 +36,7 @@ dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+server.log
 
 # Runtime data
 pids
@@ -57,5 +60,21 @@ pids
 *.xml
 recognizer.yml
 
-# Attendance data (keep but ignore changes)
-# attendance.xlsx
+# Face data (keep structure but ignore actual images for privacy)
+known_faces/*.jpg
+known_faces/*.png
+known_faces/*.jpeg
+projects/known_faces/*.jpg
+projects/known_faces/*.png
+projects/known_faces/*.jpeg
+
+# Backup files
+backup/
+*.backup
+*.bak
+
+# Attendance data (keep template but ignore actual data)
+attendance.xlsx
+
+# Docker
+.dockerignore

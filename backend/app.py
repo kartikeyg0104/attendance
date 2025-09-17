@@ -30,7 +30,10 @@ print("Starting Face Attendance Backend Server...")
 print("Loading dependencies...done")
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+
+# Configure CORS for production
+allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
+CORS(app, origins=allowed_origins)  # Enable CORS for specified origins
 
 print("Flask app initialized")
 

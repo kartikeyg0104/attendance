@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "5002:5002"
+    environment:
+      - FLASK_ENV=production
+      - PORT=5002
+    volumes:
+      - ./backend/known_faces:/app/known_faces
+      - ./backend/backup:/app/backup
+      - ./attendance.xlsx:/app/attendance.xlsx
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:5002
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+networks:
+  default:
+    driver: bridge
