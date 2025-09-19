@@ -41,7 +41,30 @@ function AttendanceCapture() {
   const [lastResult, setLastResult] = useState<AttendanceResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
   const recognitionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Check backend connection on component mount
+  React.useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/api/health`, { timeout: 5000 });
+        if (response.data.status === 'healthy') {
+          setConnectionStatus('connected');
+        } else {
+          setConnectionStatus('disconnected');
+        }
+      } catch (error) {
+        setConnectionStatus('disconnected');
+        console.error('Backend connection failed:', error);
+      }
+    };
+
+    checkConnection();
+    // Check connection every 30 seconds
+    const interval = setInterval(checkConnection, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const playAudio = useCallback((audioFile: string) => {
     try {
@@ -103,7 +126,7 @@ function AttendanceCapture() {
       }
 
       const response = await axios.post<AttendanceResponse>(
-        `${API_BASE_URL}/mark-attendance`,
+        `${API_BASE_URL}/api/mark-attendance`,
         { image: imageSrc },
         { timeout: 10000 }
       );
@@ -119,8 +142,33 @@ function AttendanceCapture() {
         playAudio('person_not_detected.wav');
       }
     } catch (err: any) {
-      const errorMessage = err.response?.data?.message || err.message || 'Recognition failed';
+      let errorMessage = 'Recognition failed';
+      
+      if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+        errorMessage = 'Request timeout - Please check your connection';
+        setConnectionStatus('disconnected');
+      } else if (err.response?.status === 500) {
+        errorMessage = 'Server error - Please try again';
+      } else if (err.response?.status === 404) {
+        errorMessage = 'Service not found - Please check backend deployment';
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      console.error('Recognition error:', err);
       setError(errorMessage);
+      
+      // Set a failed result to show in UI
+      setLastResult({
+        name: '',
+        confidence: 0,
+        timestamp: new Date().toISOString(),
+        success: false,
+        message: errorMessage
+      });
+      
       playAudio('person_not_detected.wav');
     } finally {
       setIsLoading(false);
@@ -187,6 +235,24 @@ function AttendanceCapture() {
       >
          Mark Attendance
       </Typography>
+
+      {/* Connection Status */}
+      <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+        <Chip
+          icon={connectionStatus === 'connected' ? <CheckCircle /> : <ErrorOutline />}
+          label={
+            connectionStatus === 'connected' ? 'Backend Connected' :
+            connectionStatus === 'disconnected' ? 'Backend Disconnected' :
+            'Checking Connection...'
+          }
+          color={
+            connectionStatus === 'connected' ? 'success' :
+            connectionStatus === 'disconnected' ? 'error' :
+            'default'
+          }
+          size="small"
+        />
+      </Box>
 
       <Card sx={{ p: { xs: 2, sm: 3 }, mb: { xs: 2, sm: 3 } }}>
         <Stack spacing={{ xs: 2, sm: 3 }}>

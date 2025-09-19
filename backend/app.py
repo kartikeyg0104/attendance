@@ -568,21 +568,29 @@ def retrain_model():
         return jsonify({"success": False, "message": f"Error retraining model: {str(e)}"}), 500
 
 @app.route('/mark-attendance', methods=['POST'])
+@app.route('/api/mark-attendance', methods=['POST'])
 def mark_attendance():
     """Mark attendance from webcam image"""
     try:
+        print("=== Mark Attendance Request ===")
         data = request.json
         image_data = data.get('image')
         
         if not image_data:
+            print("Error: No image data provided")
             return jsonify({"success": False, "message": "Image data is required"}), 400
         
         if not is_trained:
+            print("Error: No faces trained")
             return jsonify({"success": False, "message": "No known faces available for recognition"}), 400
+        
+        print(f"Processing image data (length: {len(image_data) if image_data else 0})")
+        print(f"Known faces: {len(known_faces)}, Names: {known_names}")
         
         # Convert base64 to OpenCV image
         image = base64_to_cv2(image_data)
         if image is None:
+            print("Error: Failed to decode image")
             return jsonify({"success": False, "message": "Invalid image data"}), 400
         
         # Convert to grayscale and detect faces
@@ -676,6 +684,10 @@ def mark_attendance():
         })
         
     except Exception as e:
+        print(f"Error in mark_attendance: {str(e)}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"success": False, "message": f"Error marking attendance: {str(e)}"}), 500
 
 @app.route('/attendance-records', methods=['GET'])
